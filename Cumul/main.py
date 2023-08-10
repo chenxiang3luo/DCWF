@@ -1,0 +1,235 @@
+import numpy as np
+import sys
+#for calculate the loss
+from sklearn.metrics import log_loss
+from sklearn.metrics import make_scorer
+
+#import three machine learning models
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedShuffleSplit
+
+#for standardizing the data
+from sklearn import preprocessing
+from sklearn.model_selection import GridSearchCV
+from exctract import get_features
+import os
+from os import mkdir, listdir
+from os.path import join, isdir, dirname
+from time import strftime
+
+# import constants as ct
+
+import configparser
+import argparse
+import logging
+import random
+import pandas
+
+import pickle
+
+import joblib
+
+
+logger = logging.getLogger('cumul')
+random.seed(1123)
+np.random.seed(1123)
+'''params'''
+r = 10
+
+def score_func(ground_truths, predictions):
+    tt = [0] * 200
+    global MON_SITE_NUM, tps, wps, fps, ps, ns, flag 
+    tp, wp, fp, p, n = 0, 0, 0, 0 ,0
+    for truth,prediction in zip(ground_truths, predictions):
+        if truth != MON_SITE_NUM:
+            p += 1
+        else:
+            n += 1
+        if prediction != MON_SITE_NUM:
+            if truth == prediction:
+                tp += 1
+                tt[truth]+= 1
+            else:
+                if truth != MON_SITE_NUM:
+                    wp += 1
+                    # logger.info('Wrong positive:%d %d'%(truth, prediction))
+                else:
+                    fp += 1
+                    # logger.info('False positive:%d %d'%(truth, prediction))
+    # logger.info('%4d %4d %4d %4d %4d'%(tp, wp, fp, p, n))
+    if flag:
+        tps += tp
+        wps += wp
+        fps += fp
+        ps += p
+        ns += n
+    try:
+        r_precision = tp*n / (tp*n+wp*n+r*p*fp)
+    except:
+        r_precision = 0.0
+    # logger.info('r-precision:%.4f',r_precision)
+    # return r_precision
+    print(tt)
+    return tp/p
+
+def read_conf(file):
+    cf = configparser.ConfigParser()
+    cf.read(file)  
+    return dict(cf['default'])
+
+
+# def parse_arguments():
+
+#     parser = argparse.ArgumentParser(description='It simulates adaptive padding on a set of web traffic traces.')
+
+#     parser.add_argument('-fp',
+#                         metavar='<feature path>',
+#                         help='Path to the directory of the extracted features',
+#                         default='D:\\Work\\work\\TangwenYi\\Lab\\WebsiteFingerprinting-master\\attacks\\kfingerprinting\\results\\20000_clear_json_3_curve_svm_open.npy')
+#     parser.add_argument('--log',
+#                         type=str,
+#                         dest="log",
+#                         metavar='<log path>',
+#                         default='stdout',
+#                         help='path to the log file. It will print to stdout by default.')
+#     # Parse arguments
+#     args = parser.parse_args()
+#     config_logger(args)
+#     return args
+
+
+# def config_logger(args):
+#     # Set file
+#     log_file = sys.stdout
+#     if args.log != 'stdout':
+#         log_file = open(args.log, 'w')
+#     ch = logging.StreamHandler(log_file)
+
+#     # Set logging format
+#     ch.setFormatter(logging.Formatter(ct.LOG_FORMAT))
+#     logger.addHandler(ch)
+
+#     # Set level format
+#     logger.setLevel(logging.INFO)
+
+
+#SVM with RBF kernel for open world!!
+def GridSearch(train_X,train_Y):
+    global OPEN_WORLD
+    #find the optimal gamma
+    param_grid = [
+    { 
+     'C': [2**11,2**13,2**15,2**17],
+     'gamma' : [2**-3,2**-1,2**1,2**3]
+    }
+    ]
+    if OPEN_WORLD:
+        my_scorer = make_scorer(score_func, greater_is_better=True)
+    else:
+        my_scorer = "accuracy"
+    # clf = GridSearchCV(estimator = SVC(kernel = 'rbf'), param_grid = param_grid, \
+    #     scoring = 'accuracy', cv = 10, verbose = 2, n_jobs = -1)
+    clf = GridSearchCV(estimator = SVC(kernel = 'rbf'), param_grid = param_grid, \
+        scoring = my_scorer, cv = 5, verbose = 0, n_jobs = -1)
+    clf.fit(train_X, train_Y)
+    # logger.info('Best estimator:%s'%clf.best_estimator_)
+    # logger.info('Best_score_:%s'%clf.best_score_)
+    return clf
+
+
+tt = ['4w']
+for j in tt:
+    print(j)
+    for i in range(6):
+        get_features(i,j)
+        global MON_SITE_NUM, tps, wps, fps, ps, ns, flag, OPEN_WORLD
+        tps, wps, fps, ps, ns = 0,0,0,0,0
+        flag = 0
+
+        # args = parse_arguments()
+        # logger.info("Arguments: %s" % (args))
+
+        # cf = read_conf(ct.confdir)
+        MON_SITE_NUM = 100+i*20
+        # if cf['open_world'] == '1':
+        #     UNMON_SITE_NUM = int(cf['unmonitored_site_num'])
+        #     OPEN_WORLD = 1
+        # else:
+        OPEN_WORLD = 0
+
+        # logger.info('loading data...')
+        dic_train = np.load('./feature_train.npy',allow_pickle=True).item()
+        dic_test = np.load('./feature_test.npy',allow_pickle=True).item()
+        X_train = np.array(dic_train['feature'])
+        y_train = np.array(dic_train['label'])
+        X_test = np.array(dic_test['feature'])
+        y_test = np.array(dic_test['label'])
+        dic = np.load('./feature.npy',allow_pickle=True).item()
+        X = np.array(dic['feature'])
+        y = np.array(dic['label'])
+
+
+        X = list(X_train)
+        X.extend(X_test)
+        X = np.array(X)
+        print(X.shape)
+        y = list(y_train)
+        y.extend(y_test)
+        y = np.array(y)
+
+        
+        # print(OPEN_WORLD)
+        # if not OPEN_WORLD:
+        #     X = X[y<MON_SITE_NUM]
+        #     y = y[y<MON_SITE_NUM]
+        # print(X.shape, y.shape)   
+
+        #normalize the data
+        # scaler = preprocessing.MinMaxScaler((-1,1))
+        # X_train = scaler.fit_transform(X_train)  
+        # X_test = scaler.fit_transform(X_test)  
+        scaler = preprocessing.MinMaxScaler((-1,1))
+        X = scaler.fit(X)
+        X_train = scaler.transform(X_train)
+        X_test = scaler.transform(X_test)
+        # logger.info('data are transformed into [-1,1]')
+
+        # find the optimal params
+        # logger.info('GridSearchCV...')
+        # X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=70*MON_SITE_NUM,stratify=y)
+        clf = GridSearch(X_train,y_train)
+
+    
+        C = clf.best_params_['C']
+        gamma = clf.best_params_['gamma']
+        #C, gamma = 131072, 8.000000
+        # C, gamma = 8192, 8.00
+        # logger.info('Best params are: %d %f'%(C,gamma))
+
+
+
+
+        folder_num = 0
+        flag = 1
+        # logger.info('Testing fold %d'%folder_num)
+        folder_num += 1
+        # print("TRAIN:", train_index, "TEST:", test_index)
+    
+        model = SVC(C = C, gamma = gamma, kernel = 'rbf')
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_test)
+        
+        r_precision = score_func(y_test, y_pred)
+        print(r_precision)
+        logger.info('%d-presicion is %.4f'%(r, r_precision))
+
+        print("%d %d %d %d %d"%(tps,wps,fps,ps,ns))
+
+
+        # model = SVC(C = C, gamma = gamma, kernel = 'rbf')
+        # model.fit(X, y)
+        # joblib.dump(model, 'ranpad2_0610_2057_norm.pkl')
+        # print('model have been saved')
+
