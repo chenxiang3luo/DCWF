@@ -13,7 +13,7 @@ This repository contains the source code implementation of the paper "Few-shot W
 ## Directory Structure
 
 **TP_lab**
-A Pytorch implementation of ![TF](https://github.com/triplet-fingerprinting/tf)
+A Pytorch implementation of [TF](https://github.com/triplet-fingerprinting/tf)
 
 **WFBDC**
 A Pytorch implementation of "An efficient cross-domain few-shot website fingerprinting attack with Brownian distance covariance"
